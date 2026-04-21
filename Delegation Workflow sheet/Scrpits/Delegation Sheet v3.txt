@@ -1,0 +1,345 @@
+function createEmployeeTask() {
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getActiveSheet(); // ✅ FIXED
+
+  if (!sheet) {
+    SpreadsheetApp.getUi().alert("❌ Sheet not found");
+    return;
+  }
+
+  const lastRow = sheet.getLastRow();
+
+  if (lastRow <= 1) {
+    SpreadsheetApp.getUi().alert("❌ No data found");
+    return;
+  }
+
+  const row = lastRow;
+
+  const data = sheet.getRange(row, 1, 1, 17).getValues()[0];
+
+const empId = sheet.getRange(row, 3).getDisplayValue().trim();
+  const empName = sheet.getRange(row, 4).getDisplayValue().trim();
+
+  if (!empName) {
+    SpreadsheetApp.getUi().alert("❌ Enter Employee Name");
+    return;
+  }
+
+  // Task ID
+  if (!data[0]) {
+    sheet.getRange(row, 1).setValue("TASK-" + Utilities.getUuid().slice(0,8));
+  }
+
+  // Date
+  if (!data[1]) {
+    sheet.getRange(row, 2).setValue(new Date());
+  }
+
+  const updatedData = sheet.getRange(row, 1, 1, 17).getValues()[0];
+
+  // Create file
+  const file = getOrCreateEmployeeFile(empName);
+  const empSheet = file.getSheets()[0];
+
+  // Headers
+  if (empSheet.getLastRow() === 0) {
+    empSheet.appendRow([
+      "TASK_ID","DATE","EMP_ID","EMP_NAME","DEPARTMENT",
+      "TASK","TASK DESCRIPTION","ASSIGNED_BY","START DATE",
+      "DEADLINE DATE","DEADLINE TIME",
+      "PRIORITY","COMPLETION DATE & TIME","DELAY DAYS",
+      "STATUS","REMARKS"
+    ]);
+  }
+
+  // Add task
+  empSheet.appendRow(updatedData.slice(0,16));
+
+  // Save link
+  sheet.getRange(row, 17).setValue(file.getUrl());
+
+  SpreadsheetApp.getUi().alert("✅ Task Created");
+}
+
+
+// EMAIL
+function getEmployeeEmail(empId) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("EMPLOYEE_MASTER");
+  const data = sheet.getDataRange().getValues();
+
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] == empId) return data[i][3];
+  }
+  return "";
+}
+
+
+// CREATE FILE
+function getOrCreateEmployeeFile(empName) {
+  const files = DriveApp.getFilesByName(empName + " TASKS");
+
+  if (files.hasNext()) {
+    return SpreadsheetApp.open(files.next());
+  } else {
+    return SpreadsheetApp.create(empName + " TASKS");
+  }
+}
+
+
+function testCreateFile() {
+  const file = DriveApp.createFile("TEST_FILE.txt", "Hello");
+  Logger.log(file.getUrl());
+}
+
+function syncEmployeeToMaster() {
+
+  const master = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("TASK_MASTER");
+  const masterData = master.getDataRange().getValues();
+
+  for (let i = 1; i < masterData.length; i++) {
+
+    const taskId = masterData[i][0];     // TASK_ID
+    const fileLink = masterData[i][16];  // Column Q (Link)
+
+    if (!taskId || !fileLink) continue;
+
+    try {
+
+      const file = SpreadsheetApp.openByUrl(fileLink);
+      const empSheet = file.getSheets()[0];
+      const empData = empSheet.getDataRange().getValues();
+
+      for (let j = 1; j < empData.length; j++) {
+
+        if (empData[j][0] == taskId) {
+
+          // ✅ STATUS (Col O = 15)
+          master.getRange(i + 1, 15).setValue(empData[j][14]);
+
+          // ✅ REMARKS (Col P = 16)
+          master.getRange(i + 1, 16).setValue(empData[j][15]);
+
+          // ✅ COMPLETION DATE (Col M = 13)
+          master.getRange(i + 1, 13).setValue(empData[j][12]);
+
+        }
+      }
+
+    } catch (err) {
+      Logger.log("Error in file: " + fileLink);
+    }
+  }
+}
+
+// =====================================
+// ✅ BUTTON FUNCTION
+// =====================================
+function distributeTasksToEmployees() {
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName("TASK_MASTER");
+
+  if (!sheet) {
+    SpreadsheetApp.getUi().alert("❌ Sheet TASK_MASTER not found");
+    return;
+  }
+
+  const data = sheet.getDataRange().getValues();
+
+  for (let i = 1; i < data.length; i++) {
+
+    const row = i + 1;
+    const rowData = data[i];
+
+    const taskId = rowData[0];     // Col A
+    const empId = rowData[2];      // Col C
+    const empName = rowData[3];    // Col D
+    const task = rowData[5];       // Col F
+    const link = rowData[16];      // Col Q
+
+    if (!empName || !task || link) continue;
+
+    // ✅ Task ID
+    if (!taskId) {
+      sheet.getRange(row, 1).setValue("TASK-" + Utilities.getUuid().slice(0,8));
+    }
+
+    // ✅ Date
+    if (!rowData[1]) {
+      sheet.getRange(row, 2).setValue(new Date());
+    }
+
+    const updatedData = sheet.getRange(row, 1, 1, 17).getValues()[0];
+
+    // ✅ Create/Open Employee File
+    const file = getOrCreateEmployeeFile(empName);
+    const empSheet = file.getSheets()[0];
+
+    // ✅ Headers
+    if (empSheet.getLastRow() === 0) {
+      empSheet.appendRow([
+        "TASK_ID","DATE","EMP_ID","EMP_NAME","DEPARTMENT",
+        "TASK","TASK DESCRIPTION","ASSIGNED_BY","START DATE",
+        "DEADLINE DATE","DEADLINE TIME",
+        "PRIORITY","COMPLETION DATE & TIME","DELAY DAYS",
+        "STATUS","REMARKS"
+      ]);
+    }
+
+    // ✅ Add task
+    empSheet.appendRow(updatedData.slice(0,16));
+
+    // ✅ Save link
+    sheet.getRange(row, 17).setValue(file.getUrl());
+
+    // ✅ Email
+    const empEmail = getEmployeeEmail(empId);
+
+    if (empEmail) {
+      MailApp.sendEmail({
+        to: empEmail,
+        subject: "📌 New Task Assigned",
+        htmlBody: `
+          <p>Hello ${empName},</p>
+          <p>You have a new task:</p>
+          <p><b>${updatedData[5]}</b></p>
+          <p><a href="${file.getUrl()}">Open Task Sheet</a></p>
+        `
+      });
+    }
+  }
+
+  SpreadsheetApp.getUi().alert("✅ Tasks Distributed Successfully");
+}
+
+
+// =====================================
+// ✅ CREATE / GET EMPLOYEE FILE
+// =====================================
+function getOrCreateEmployeeFile(empName) {
+
+  if (!empName) throw new Error("Employee Name Missing");
+
+  const fileName = empName.trim() + " TASKS";
+
+  const files = DriveApp.getFilesByName(fileName);
+
+  if (files.hasNext()) {
+    return SpreadsheetApp.open(files.next());
+  }
+
+  return SpreadsheetApp.create(fileName);
+}
+
+
+// =====================================
+// ✅ GET EMPLOYEE EMAIL
+// =====================================
+function getEmployeeEmail(empId) {
+
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("EMPLOYEE_MASTER");
+  if (!sheet) return "";
+
+  const data = sheet.getDataRange().getValues();
+
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] == empId) return data[i][3];
+  }
+
+  return "";
+}
+
+
+// =====================================
+// ✅ SYNC EMPLOYEE → MASTER
+// =====================================
+function syncEmployeeToMaster() {
+
+  const master = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("TASK_MASTER");
+  const data = master.getDataRange().getValues();
+
+  for (let i = 1; i < data.length; i++) {
+
+    const taskId = data[i][0];
+    const link = data[i][16];
+
+    if (!taskId || !link) continue;
+
+    try {
+      const file = SpreadsheetApp.openByUrl(link);
+      const empSheet = file.getSheets()[0];
+      const empData = empSheet.getDataRange().getValues();
+
+      for (let j = 1; j < empData.length; j++) {
+
+        if (empData[j][0] == taskId) {
+
+          master.getRange(i+1, 15).setValue(empData[j][14]); // Status
+          master.getRange(i+1, 16).setValue(empData[j][15]); // Remarks
+          master.getRange(i+1, 13).setValue(empData[j][12]); // Completion
+
+        }
+      }
+
+    } catch (e) {
+      Logger.log("Error: " + link);
+    }
+  }
+} 
+
+function calculateDelayDays() {
+
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("TASK_MASTER");
+  const data = sheet.getDataRange().getValues();
+
+  for (let i = 1; i < data.length; i++) {
+
+    const deadline = data[i][9];     // DEADLINE DATE (J)
+    const completion = data[i][12];  // COMPLETION (M)
+
+    if (deadline && completion) {
+
+      const diff = (new Date(completion) - new Date(deadline)) / (1000 * 60 * 60 * 24);
+
+      sheet.getRange(i+1, 14).setValue(Math.floor(diff)); // Col N
+
+    }
+  }
+}
+
+function moveCompletedTasks() {
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  // ✅ FIXED: Use exact master sheet name
+  const sheet = ss.getSheetByName("TASK_MASTER");
+
+  const completedSheetName = "COMPLETED TASKS";
+  let completedSheet = ss.getSheetByName(completedSheetName);
+
+  // Create sheet if not exists
+  if (!completedSheet) {
+    completedSheet = ss.insertSheet(completedSheetName);
+  }
+
+  const data = sheet.getDataRange().getValues();
+
+  // Loop from bottom
+  for (let i = data.length - 1; i > 0; i--) {
+
+    const status = data[i][14]; // Column O
+
+    if (status === "Done") {
+
+      const rowData = sheet.getRange(i + 1, 1, 1, sheet.getLastColumn()).getValues();
+
+      // Move to completed sheet
+      completedSheet.appendRow(rowData[0]);
+
+      // Delete from master
+      sheet.deleteRow(i + 1);
+    }
+  }
+}

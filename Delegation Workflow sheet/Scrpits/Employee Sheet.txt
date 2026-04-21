@@ -1,0 +1,92 @@
+function onEdit(e) {
+
+  // 🔴 Safety check (important)
+  if (!e) return;
+
+  const sheet = e.source.getActiveSheet();
+  const row = e.range.getRow();
+  const col = e.range.getColumn();
+
+  if (row === 1) return;
+
+  // ✅ Only run on STATUS (O=15) & REMARKS (P=16)
+  if (col !== 15 && col !== 16) return;
+
+  const taskId = String(sheet.getRange(row, 1).getValue()).trim();
+  if (!taskId) return;
+
+  const status = sheet.getRange(row, 15).getValue();
+  const remarks = sheet.getRange(row, 16).getValue();
+  const completionCell = sheet.getRange(row, 13);
+
+  // ✅ Auto Completion Date + Time
+  if (status === "Done" && !completionCell.getValue()) {
+    completionCell.setValue(new Date());
+    completionCell.setNumberFormat("dd-MM-yyyy HH:mm:ss");
+  }
+
+  const completion = completionCell.getValue();
+
+  // ✅ MASTER FILE ID
+  const masterId = "1bVcffDOw2o2yufUZpboJDeNQ3bQMS4aAweNN462MsM0";
+
+  const masterSS = SpreadsheetApp.openById(masterId);
+  const masterSheet = masterSS.getSheetByName("TASK_MASTER");
+
+  if (!masterSheet) {
+    Logger.log("❌ Sheet not found");
+    return;
+  }
+
+  const data = masterSheet.getDataRange().getValues();
+
+  for (let i = 1; i < data.length; i++) {
+
+    const masterTaskId = String(data[i][0]).trim();
+
+    if (masterTaskId === taskId) {
+
+      // ✅ UPDATE MASTER
+      masterSheet.getRange(i + 1, 15).setValue(status);     // STATUS
+      masterSheet.getRange(i + 1, 16).setValue(remarks);    // REMARKS
+      masterSheet.getRange(i + 1, 13).setValue(completion); // COMPLETION
+
+      break;
+    }
+  }
+}
+
+
+function moveCompletedTasks() {
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getActiveSheet();
+  const completedSheetName = "COMPLETED TASKS";
+
+  let completedSheet = ss.getSheetByName(completedSheetName);
+
+  // Create sheet if not exists
+  if (!completedSheet) {
+    completedSheet = ss.insertSheet(completedSheetName);
+  }
+
+  const data = sheet.getDataRange().getValues();
+
+  // Loop from bottom (important)
+  for (let i = data.length - 1; i > 0; i--) {
+
+    const status = data[i][14]; // Column O
+
+    if (status === "Done") {
+
+      const rowData = sheet.getRange(i + 1, 1, 1, sheet.getLastColumn()).getValues();
+
+      // Move to completed sheet
+      completedSheet.appendRow(rowData[0]);
+
+      // Delete from current sheet
+      sheet.deleteRow(i + 1);
+    }
+  }
+}
+
