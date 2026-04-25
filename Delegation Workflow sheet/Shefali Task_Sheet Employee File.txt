@@ -1,0 +1,72 @@
+function onEdit(e) {
+  const sheet = e.source.getActiveSheet();
+  const row = e.range.getRow();
+  const col = e.range.getColumn();
+
+  if (col !== 14 && col !== 15) return;
+
+  const mainFileId = "13MbFzLZmQgQt4S9DDqSe0bC7EzZz_jNE79GnNiHXhcs";
+  const main = SpreadsheetApp.openById(mainFileId);
+  const mainSheet = main.getSheetByName("Task_Master");
+
+  const empId = sheet.getRange(row, 2).getValue();
+  const task = sheet.getRange(row, 5).getValue();
+
+  const data = mainSheet.getDataRange().getValues();
+
+  for (let i = 0; i < data.length; i++) {
+    if (data[i][1] == empId && data[i][4] == task) {
+
+      mainSheet.getRange(i+1,14).setValue(sheet.getRange(row,14).getValue());
+      mainSheet.getRange(i+1,15).setValue(sheet.getRange(row,15).getValue());
+
+      if (sheet.getRange(row,14).getValue() === "Done") {
+        mainSheet.getRange(i+1,12).setValue(new Date());
+      }
+    }
+  }
+  // ✅ When Status = Done
+  if (col === 14 && e.value === "Done") {
+
+    const completionCell = sheet.getRange(row, 12);
+    if (!completionCell.getValue()) {
+      completionCell.setValue(new Date());
+    }
+
+    const deadlineDate = sheet.getRange(row, 9).getValue();
+    const deadlineTime = sheet.getRange(row, 10).getValue();
+    const completion = new Date();
+
+    const deadline = new Date(deadlineDate);
+    if (deadlineTime) {
+      deadline.setHours(deadlineTime.getHours());
+      deadline.setMinutes(deadlineTime.getMinutes());
+    }
+
+    const delay = Math.max(0, (completion - deadline) / (1000 * 60 * 60 * 24));
+    sheet.getRange(row, 13).setValue(delay.toFixed(2));
+
+    // ⏳ Move after 1 minute
+    Utilities.sleep(60000);
+    moveToCompleted(row);
+  }
+}
+
+
+
+//🟢 Script 2: Move Completed Task
+function moveDoneTasks() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName("Task_Master");
+  const completed = ss.getSheetByName("Completed_Tasks");
+
+  const data = sheet.getDataRange().getValues();
+
+  for (let i = data.length - 1; i > 0; i--) {
+    if (data[i][13] === "Done") { // column 14
+
+      completed.appendRow(data[i]);
+      sheet.deleteRow(i + 1);
+    }
+  }
+}

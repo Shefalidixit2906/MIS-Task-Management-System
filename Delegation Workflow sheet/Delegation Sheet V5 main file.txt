@@ -1,0 +1,138 @@
+
+//Script 1: Auto Timestamp + Start Date
+function onEdit(e) {
+  if (!e) return; // 👈 prevents manual run error
+  const sheet = e.source.getActiveSheet();
+  const row = e.range.getRow();
+  const col = e.range.getColumn();
+
+  if (sheet.getName() !== "Task_Master") return;
+
+  // ✅ Auto Timestamp + Start Date
+  if (col === 2) {
+    sheet.getRange(row, 1).setValue(new Date()); // DATE
+    sheet.getRange(row, 8).setValue(new Date()); // START DATE
+  }
+
+  // ✅ Auto Fetch Employee Name + Department
+  if (col === 2) {
+    const empId = sheet.getRange(row, 2).getValue();
+    const empSheet = e.source.getSheetByName("Employee_Master");
+    const data = empSheet.getDataRange().getValues();
+
+    data.forEach(r => {
+      if (r[0] == empId) {
+        sheet.getRange(row, 3).setValue(r[1]); // Name
+        sheet.getRange(row, 4).setValue(r[2]); // Department
+      }
+    });
+  }
+
+  // ✅ When Status = Done
+  if (col === 14 && e.value === "Done") {
+
+    const completionCell = sheet.getRange(row, 12);
+    if (!completionCell.getValue()) {
+      completionCell.setValue(new Date());
+    }
+
+    const deadlineDate = sheet.getRange(row, 9).getValue();
+    const deadlineTime = sheet.getRange(row, 10).getValue();
+    const completion = new Date();
+
+    const deadline = new Date(deadlineDate);
+    if (deadlineTime) {
+      deadline.setHours(deadlineTime.getHours());
+      deadline.setMinutes(deadlineTime.getMinutes());
+    }
+
+    const delay = Math.max(0, (completion - deadline) / (1000 * 60 * 60 * 24));
+    sheet.getRange(row, 13).setValue(delay.toFixed(2));
+
+    // ⏳ Move after 1 minute
+    Utilities.sleep(60000);
+    moveToCompleted(row);
+  }
+}
+
+//🟢 Script 2: Move Completed Task
+function moveDoneTasks() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName("Task_Master");
+  const completed = ss.getSheetByName("Completed_Tasks");
+
+  const data = sheet.getDataRange().getValues();
+
+  for (let i = data.length - 1; i > 0; i--) {
+    if (data[i][13] === "Done") { // column 14
+
+      completed.appendRow(data[i]);
+      sheet.deleteRow(i + 1);
+    }
+  }
+}
+
+
+// 👤 4. Create Employee Workbook Automatically
+// 🟢 Script 3: Assign Task Button
+// Insert button → Assign script
+
+
+function assignTask() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName("Task_Master");
+  const row = sheet.getActiveRange().getRow();
+
+  const empId = sheet.getRange(row, 2).getValue();
+  const empName = sheet.getRange(row, 3).getValue();
+
+  const empSheet = ss.getSheetByName("Employee_Master");
+  const empData = empSheet.getDataRange().getValues();
+
+  let email = "";
+
+  empData.forEach(r => {
+    if (r[0] == empId) {
+      email = r[3];
+    }
+  });
+
+  if (!email) {
+    SpreadsheetApp.getUi().alert("Employee email not found!");
+    return;
+  }
+
+  // ✅ Create Employee File
+  const newFile = SpreadsheetApp.create(empName + " Task_Sheet");
+  const newSheet = newFile.getSheets()[0];
+
+  // ❌ EXCLUDE last column (16)
+  const headers = sheet.getRange(1, 1, 1, 15).getValues();
+  newSheet.getRange(1, 1, 1, 15).setValues(headers);
+
+  const rowData = sheet.getRange(row, 1, 1, 15).getValues();
+  newSheet.getRange(2, 1, 1, 15).setValues(rowData);
+
+  // 🔒 Protect sheet (only Status & Remarks editable)
+  const protection = newSheet.protect().setDescription("Lock Sheet");
+  const unprotected = [
+    newSheet.getRange("N2:N1000"), // Status
+    newSheet.getRange("O2:O1000")  // Remarks
+  ];
+  protection.setUnprotectedRanges(unprotected);
+
+  // 📧 Share with employee
+  DriveApp.getFileById(newFile.getId()).addEditor(email);
+
+  // 🔗 Save link ONLY in main sheet
+  sheet.getRange(row, 16).setValue(newFile.getUrl());
+
+  // 📩 Send Email
+  MailApp.sendEmail({
+    to: email,
+    subject: "Task Assigned",
+    body: "You have a new task:\n\n" + newFile.getUrl()
+  });
+
+  SpreadsheetApp.getUi().alert("Task Assigned Successfully!");
+}
